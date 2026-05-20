@@ -577,16 +577,26 @@
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // 1. 바둑판식(repeat) 벽돌 배경 패턴 구현 부
-        let bgIndex = Math.min(Math.floor((gameState.wave - 1) / 10), 3);
-        let bgImg = gameImages[`background_wall${bgIndex + 1}`];
-        if (bgImg && bgImg.complete && bgImg.width > 0) {
-            let pattern = ctx.createPattern(bgImg, 'repeat');
-            ctx.fillStyle = pattern;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        } else {
-            ctx.fillStyle = '#161616'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
+      // 1. 바둑판식 배경 적용 (투명도 조절 포함)
+    let bgIndex = Math.min(Math.floor((gameState.wave - 1) / 10), 3);
+    let bgImg = gameImages[`background_wall${bgIndex + 1}`];
+    
+    if (bgImg && bgImg.complete && bgImg.width > 0) {
+        ctx.save(); // 현재 캔버스 그래픽 상태 저장
+        
+        // 배경 투명도 설정 (0.0은 완전 투명, 1.0은 완전 불투명)
+        // 0.25 ~ 0.35 사이가 벽돌 느낌을 살리면서 UI를 돋보이게 하기에 가장 적절합니다.
+        ctx.globalAlpha = 0.3; 
+        
+        let pattern = ctx.createPattern(bgImg, 'repeat');
+        ctx.fillStyle = pattern;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.restore(); // 투명도를 원래대로(1.0) 되돌려 이후 오브젝트에 영향을 주지 않음
+    } else {
+        ctx.fillStyle = '#161616'; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
         // 2. 격자망 오버레이 드로잉
         ctx.fillStyle = 'rgba(22, 22, 22, 0.2)'; ctx.fillRect(0, gridStartY, canvas.width, gridHeight);
