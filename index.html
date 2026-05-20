@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>요새 요격전 - 범위 버프 비주얼 및 스태이터스 완벽 수정 패치</title>
+    <title>요새 요격전 - 배경 패턴 및 40웨이브 클리어 완성본</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
         body { background-color: #121212; color: #ffffff; font-family: 'Malgun Gothic', sans-serif; overflow: hidden; touch-action: manipulation; }
         #game-container { position: relative; width: 100vw; height: 100vh; max-width: 600px; margin: 0 auto; background: #1a1a1a; display: flex; flex-direction: column; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
-        #top-ui { height: 55px; background: #222; border-bottom: 3px solid #333; display: flex; justify-content: space-around; align-items: center; padding: 0 10px; font-size: 13px; font-weight: bold; z-index: 5; }
+        #top-ui { height: 55px; background: rgba(34, 34, 34, 0.9); border-bottom: 3px solid #333; display: flex; justify-content: space-around; align-items: center; padding: 0 10px; font-size: 13px; font-weight: bold; z-index: 5; }
         .ui-stat { display: flex; align-items: center; gap: 4px; }
         .gold-text { color: #ffd700; }
         .elec-text { color: #00ffff; }
@@ -80,11 +80,12 @@
 
 <script>
     // ==========================================
-    // 이미지 로더 설정
+    // 이미지 로더 설정 (벽돌 타일 배경 1~4번 포함)
     // ==========================================
     const gameImages = {
         zombie_normal: new Image(), zombie_runner: new Image(), zombie_boss: new Image(),
-        generator: new Image(), turret: new Image(), slow: new Image(), amp: new Image(), gate: new Image()
+        generator: new Image(), turret: new Image(), slow: new Image(), amp: new Image(), gate: new Image(),
+        background_wall1: new Image(), background_wall2: new Image(), background_wall3: new Image(), background_wall4: new Image()
     };
     gameImages.zombie_normal.src = "zombie_normal.png"; 
     gameImages.zombie_runner.src = "zombie_runner.png";
@@ -94,6 +95,10 @@
     gameImages.slow.src = "turret_slow.png";
     gameImages.amp.src = "turret_amp.png";
     gameImages.gate.src = "castle_gate.png";
+    gameImages.background_wall1.src = "background_wall1.png";
+    gameImages.background_wall2.src = "background_wall2.png";
+    gameImages.background_wall3.src = "background_wall3.png";
+    gameImages.background_wall4.src = "background_wall4.png";
 
     // ==========================================
     // 사운드 시스템
@@ -229,7 +234,7 @@
     }
 
     // ==========================================
-    // 3x3 격자 범위 및 실시간 모달 텍스트 동기화
+    // 3x3 격자 범위 버프 실시간 연산 연동
     // ==========================================
     function recalculateBuffs() {
         let maxAmp = 0;
@@ -258,7 +263,6 @@
             }
         });
 
-        // 모달이 열려있는 도중 버프 상태가 바뀌면 수치도 실시간 갱신
         if (upgradeModal.style.display === 'block' && selectedObject && selectedObject.type !== 'gate') {
             showUpgradeModal(selectedObject);
         }
@@ -284,7 +288,7 @@
     }
 
     // ==========================================
-    // [핵심 패치] 공격력 추가 스태이터스 괄호 () 적용
+    // 모달 내 실시간 공격력 추가 스태이터스 괄호 표기 적용
     // ==========================================
     function showUpgradeModal(building) {
         upgradeModal.style.display = 'block';
@@ -398,8 +402,19 @@
     }
     function createPopupText(x, y, text, color, size) { textPopups.push({ x, y, text: text, color: color, alpha: 1, size: size, ySpeed: -0.8 }); }
 
+    // ==========================================
+    // 웨이브 생성 제어 (40 웨이브 전용 승리 분기 포함)
+    // ==========================================
     function spawnZombieHorde() {
         if (gameState.gameOver || !gameState.waveActive || gameState.waveTotalSpawned >= gameState.waveMaxSpawn) return;
+        
+        // 40 웨이브 클리어 조건 체크
+        if (gameState.wave > 40) {
+            gameState.gameOver = true;
+            endGame(true);
+            return;
+        }
+
         let hpBase = 40 + Math.pow(gameState.wave, 1.45) * 16;
         let speedMultiplier = Math.min(2.0, 0.9 + (gameState.wave * 0.07));
         let hordeSize = Math.min(8, 3 + Math.floor(gameState.wave / 3));
@@ -420,7 +435,16 @@
     }
 
     function startNextWave() {
-        gameState.wave++; gameState.waveTotalSpawned = 0;
+        gameState.wave++; 
+        
+        // 40 웨이브 돌파 성공 시 루프 차단 및 즉시 클리어 처리
+        if (gameState.wave > 40) {
+            gameState.gameOver = true;
+            endGame(true);
+            return;
+        }
+
+        gameState.waveTotalSpawned = 0;
         gameState.waveMaxSpawn = 10 + (gameState.wave * 6); gameState.waveZombiesLeft = gameState.waveMaxSpawn;
         gameState.gold += 50 + (gameState.wave * 15); gameState.startDelay = 0; gameState.waveActive = true;
         createParticle(canvas.width/2, canvas.height/4, '#00ffff', 15); updateUI();
@@ -470,7 +494,6 @@
         });
     }, 50);
 
-    // 공격 및 사격 제어 루프
     setInterval(() => {
         if (gameState.gameOver) return;
         let now = Date.now();
@@ -549,12 +572,25 @@
     }, 30);
 
     // ==========================================
-    // 렌더링 루프 (비주얼 가시성 링 필터 보정)
+    // 렌더링 루프 (바둑판식 패턴 맵 드로잉 내장)
     // ==========================================
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#161616'; ctx.fillRect(0, gridStartY, canvas.width, gridHeight);
-        ctx.strokeStyle = '#252525'; ctx.lineWidth = 1.2;
+        
+        // 1. 바둑판식(repeat) 벽돌 배경 패턴 구현 부
+        let bgIndex = Math.min(Math.floor((gameState.wave - 1) / 10), 3);
+        let bgImg = gameImages[`background_wall${bgIndex + 1}`];
+        if (bgImg && bgImg.complete && bgImg.width > 0) {
+            let pattern = ctx.createPattern(bgImg, 'repeat');
+            ctx.fillStyle = pattern;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else {
+            ctx.fillStyle = '#161616'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // 2. 격자망 오버레이 드로잉
+        ctx.fillStyle = 'rgba(22, 22, 22, 0.2)'; ctx.fillRect(0, gridStartY, canvas.width, gridHeight);
+        ctx.strokeStyle = 'rgba(37, 37, 37, 0.6)'; ctx.lineWidth = 1.2;
         for (let i = 0; i <= GRID_COLS; i++) { ctx.beginPath(); ctx.moveTo(i * cellWidth, gridStartY); ctx.lineTo(i * cellWidth, gridStartY + gridHeight); ctx.stroke(); }
         for (let j = 0; j <= GRID_ROWS; j++) { ctx.beginPath(); ctx.moveTo(0, gridStartY + j * cellHeight); ctx.lineTo(canvas.width, gridStartY + j * cellHeight); ctx.stroke(); }
 
@@ -583,10 +619,9 @@
             else if (b.type === 'amp') img = gameImages.amp;
             else if (b.type === 'turret') img = gameImages.turret;
 
-            // [패치 핵심 코드] 연한 Red 계열의 은은한 오라 이펙트 적용
+            // AMP 버프 범위 내 소속 타워에 연한 레드 계열 네온 오라 효과 적용
             if (b.isBuffed) {
                 ctx.save();
-                // 투명도가 진하지 않고 부드러운 네온 레드 발광 효과 구현
                 ctx.strokeStyle = `rgba(255, 65, 65, ${0.45 + Math.sin(Date.now() / 140) * 0.2})`;
                 ctx.lineWidth = 3.5;
                 ctx.shadowColor = '#ff4141';
@@ -597,7 +632,6 @@
                 ctx.restore();
             }
 
-            // 클릭 선택 표시기
             if (selectedObject && selectedObject.row === b.row && selectedObject.col === b.col) {
                 ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2;
                 ctx.strokeRect(bX - size - 4, bY - size - 4, size * 2 + 8, size * 2 + 8);
@@ -642,7 +676,7 @@
                         let dmgDealt = z.type === 'boss' ? 300 : (z.type === 'runner' ? 25 : 55);
                         gate.hp -= dmgDealt; z.lastAttack = now;
                         createPopupText(z.x, gate.y + gate.height, `-💥${dmgDealt}`, '#ff3333', 12); createParticle(z.x, gate.y + gate.height, '#ff3333', 8);
-                        if (gate.hp <= 0) { gameState.gameOver = true; endGame(); }
+                        if (gate.hp <= 0) { gameState.gameOver = true; endGame(false); }
                     }
                 }
             }
@@ -687,7 +721,18 @@
         if (!gameState.gameOver) requestAnimationFrame(gameLoop);
     }
 
-    function endGame() { if (bgmInterval) clearTimeout(bgmInterval); playSoundFX('gameover'); document.getElementById('game-over-screen').style.display = 'flex'; document.getElementById('go-desc').innerText = `최종 단계: WAVE ${gameState.wave}`; }
+    function endGame(isWin = false) { 
+        if (bgmInterval) clearTimeout(bgmInterval); 
+        playSoundFX('gameover'); 
+        const goScreen = document.getElementById('game-over-screen');
+        goScreen.style.display = 'flex'; 
+        const title = goScreen.querySelector('h1');
+        
+        title.innerText = isWin ? "MISSION CLEAR!" : "FORTRESS FALLEN";
+        title.style.color = isWin ? "#00ff00" : "#ff4d4d";
+        document.getElementById('go-desc').innerText = isWin ? "40 웨이브 전선을 완벽히 수호하셨습니다!" : `최종 단계: WAVE ${gameState.wave}`; 
+    }
+    
     document.getElementById('restart-btn').addEventListener('click', () => location.reload());
     
     resizeCanvas(); updateUI(); requestAnimationFrame(gameLoop);
