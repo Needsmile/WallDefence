@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>요새 요격전 - 타워 스탯 최적화 패치</title>
+    <title>요새 요격전 - 범위 버프 비주얼 및 스태이터스 완벽 수정 패치</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
         body { background-color: #121212; color: #ffffff; font-family: 'Malgun Gothic', sans-serif; overflow: hidden; touch-action: manipulation; }
@@ -21,12 +21,12 @@
         .build-btn.active { border-color: #00ffff; background: #1e2e2e; transform: scale(1.03); }
         .cost-tag { font-size: 9px; color: #ffd700; }
         
-        #upgrade-modal { display: none; position: absolute; bottom: 110px; left: 5%; width: 90%; background: rgba(20, 20, 20, 0.98); border: 2px solid #00ffff; border-radius: 10px; padding: 15px; z-index: 10; box-shadow: 0 0 15px rgba(0,255,255,0.4); }
-        .modal-title { font-size: 15px; font-weight: bold; margin-bottom: 8px; color: #00ffff; display: flex; justify-content: space-between; }
+        #upgrade-modal { display: none; position: absolute; bottom: 110px; left: 5%; width: 90%; background: rgba(20, 20, 20, 0.98); border: 2px solid #ff4141; border-radius: 10px; padding: 15px; z-index: 10; box-shadow: 0 0 15px rgba(255,65,65,0.4); }
+        .modal-title { font-size: 15px; font-weight: bold; margin-bottom: 8px; color: #ff4141; display: flex; justify-content: space-between; }
         .modal-close { cursor: pointer; color: #ff4d4d; padding: 0 5px; }
         .modal-info { font-size: 12px; margin-bottom: 12px; line-height: 1.6; color: #ddd; }
-        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: #292929; padding: 8px; border-radius: 5px; margin-bottom: 10px; border-left: 3px solid #00ffff; font-size: 11px; }
-        .modal-btn { width: 100%; padding: 10px; background: #00ffff; color: #000; border: none; border-radius: 5px; font-weight: bold; font-size: 13px; cursor: pointer; margin-top: 5px; }
+        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: #292929; padding: 8px; border-radius: 5px; margin-bottom: 10px; border-left: 3px solid #ff4141; font-size: 11px; }
+        .modal-btn { width: 100%; padding: 10px; background: #ff4141; color: #000; border: none; border-radius: 5px; font-weight: bold; font-size: 13px; cursor: pointer; margin-top: 5px; }
         .modal-btn:disabled { background: #555; color: #aaa; cursor: not-allowed; }
         
         .evo-container { display: none; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 8px; border-top: 1px dashed #444; padding-top: 10px; }
@@ -80,7 +80,7 @@
 
 <script>
     // ==========================================
-    // 이미지 로더 설정 (파일명 소문자 규격 엄수)
+    // 이미지 로더 설정
     // ==========================================
     const gameImages = {
         zombie_normal: new Image(), zombie_runner: new Image(), zombie_boss: new Image(),
@@ -176,7 +176,8 @@
 
     let selectedObject = null;
     let buildings = []; let zombies = []; let bullets = []; let particles = []; let textPopups = []; let chainLines = [];
-    let currentBuildMode = 'none'; let globalBuff = { damageMultiplier: 1.0, rangeBonus: 0, maxAmpLevel: 0 };
+    let currentBuildMode = 'none'; 
+    let globalBuff = { rangeBonus: 0, maxAmpLevel: 0 };
 
     const goldVal = document.getElementById('gold-val'); const elecVal = document.getElementById('elec-val');
     const waveVal = document.getElementById('wave-val'); const timerVal = document.getElementById('timer-val');
@@ -202,7 +203,7 @@
         if (y >= gridStartY && y <= gridStartY + gridHeight) {
             const col = Math.floor(x / cellWidth); const row = Math.floor((y - gridStartY) / cellHeight);
             if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) handleGridClick(row, col);
-        } else { upgradeModal.style.display = 'none'; }
+        } else { upgradeModal.style.display = 'none'; selectedObject = null; }
     });
 
     function handleGridClick(row, col) {
@@ -217,18 +218,50 @@
 
             if (gameState.gold >= cost && gameState.electricity >= elecCost) {
                 gameState.gold -= cost; gameState.electricity -= elecCost;
-                buildings.push({ row, col, type: currentBuildMode, level: 1, subType: 'none', lastShot: 0 });
+                buildings.push({ row, col, type: currentBuildMode, level: 1, subType: 'none', lastShot: 0, lastGenTime: Date.now(), isBuffed: false, buffMultiplier: 1.0 });
                 createParticle(col * cellWidth + cellWidth/2, gridStartY + row * cellHeight + cellHeight/2, '#ffffff', 12);
                 setBuildMode('none'); recalculateBuffs(); updateUI();
             }
-        } else if (existing) { selectedObject = existing; showUpgradeModal(existing); }
+        } else if (existing) { 
+            selectedObject = existing; 
+            showUpgradeModal(existing); 
+        }
     }
 
+    // ==========================================
+    // 3x3 격자 범위 및 실시간 모달 텍스트 동기화
+    // ==========================================
     function recalculateBuffs() {
-        let totalAmpLevels = 0; let maxAmp = 0;
-        buildings.forEach(b => { if (b.type === 'amp') { totalAmpLevels += b.level; if (b.level > maxAmp) maxAmp = b.level; } });
-        globalBuff.damageMultiplier = 1.0 + (totalAmpLevels * 0.15);
-        globalBuff.rangeBonus = totalAmpLevels * 12; globalBuff.maxAmpLevel = maxAmp;
+        let maxAmp = 0;
+        buildings.forEach(b => { 
+            if (b.type === 'amp') { if (b.level > maxAmp) maxAmp = b.level; } 
+            b.isBuffed = false;
+            b.buffMultiplier = 1.0;
+        });
+        
+        globalBuff.maxAmpLevel = maxAmp;
+        globalBuff.rangeBonus = maxAmp * 12;
+
+        buildings.forEach(amp => {
+            if (amp.type === 'amp') {
+                let ampPower = 1.0 + (amp.level * 0.15);
+                buildings.forEach(target => {
+                    if (target.type !== 'generator' && target.type !== 'amp') {
+                        if (Math.abs(amp.row - target.row) <= 1 && Math.abs(amp.col - target.col) <= 1) {
+                            target.isBuffed = true;
+                            if (ampPower > target.buffMultiplier) {
+                                target.buffMultiplier = ampPower;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        // 모달이 열려있는 도중 버프 상태가 바뀌면 수치도 실시간 갱신
+        if (upgradeModal.style.display === 'block' && selectedObject && selectedObject.type !== 'gate') {
+            showUpgradeModal(selectedObject);
+        }
     }
 
     function showGateUpgradeModal() {
@@ -245,13 +278,13 @@
                 gameState.gold -= gate.upgradeCost; gate.level++; gate.maxHp += 800; gate.hp = gate.maxHp; gate.regen += 3;
                 gate.upgradeCost = Math.floor(gate.upgradeCost * 1.6);
                 createParticle(gate.x + gate.width/2, gate.y + gate.height/2, '#ffd700', 20);
-                upgradeModal.style.display = 'none'; updateUI();
+                upgradeModal.style.display = 'none'; selectedObject = null; updateUI();
             }
         };
     }
 
     // ==========================================
-    // [UI 스탯 최적화] 발전기/증폭타워 공격스탯 제거 파트
+    // [핵심 패치] 공격력 추가 스태이터스 괄호 () 적용
     // ==========================================
     function showUpgradeModal(building) {
         upgradeModal.style.display = 'block';
@@ -277,37 +310,62 @@
             if (gameState.gold < costGold) upBtn.disabled = true;
         }
 
-        // 특정 타입 타워별 정보 가독성 분기 조정
         if (building.type === 'generator') {
-            desc = "초당 골드와 전력을 안전하게 원격 보급하는 생산 특화 시설입니다. (공격 기능 없음)";
-            statusHtml = `<div style="grid-column: span 2; color:#ffd700;">생산 골드: +${building.level * 4} / 초</div>
-                         <div style="grid-column: span 2; color:#00ffff;">생산 전력: ${building.level >= 3 ? `+${building.level - 2} / 초` : '0 / 초'}</div>`;
+            let currentCooldown = Math.max(400, 2000 - (building.level - 1) * 200) / 1000;
+            let nextCooldown = Math.max(400, 2000 - building.level * 200) / 1000;
+            desc = "골드와 전력을 보급하는 시설입니다. 업그레이드 시 충전 및 보급 딜레이 시간이 감소합니다.";
+            statusHtml = `<div style="color:#ffd700;">생산 골드: +${building.level * 4}</div>
+                         <div style="color:#00ffff;">생산 전력: ${building.level >= 3 ? `+${building.level - 2}` : '0'}</div>
+                         <div style="grid-column: span 2; color:#a855f7; margin-top:4px;">보급 주기: ${currentCooldown}초 ➔ <span style="color:#00ff00;">${building.level >= 10 ? 'MAX' : nextCooldown + '초'}</span></div>`;
         } else if (building.type === 'amp') {
-            desc = "에너지 파동을 방출하여 맵에 존재하는 모든 아군 화력 타워의 화력을 증폭합니다. (공격 기능 없음)";
-            statusHtml = `<div style="grid-column: span 2; color:#ec4899; font-size:12px; text-align:center; padding:4px;">전체 타워 데미지 버프: +${Math.round((globalBuff.damageMultiplier - 1)*100)}%</div>`;
+            desc = "주변 3x3 범위 타일 안에 건설된 공격형 타워들을 활성화하여 화력을 증폭시킵니다.";
+            statusHtml = `<div style="grid-column: span 2; color:#ff4141; font-size:12px; text-align:center; padding:4px;">해당 격자내 공격력 상승률: +${building.level * 15}%</div>`;
         } else if (building.type === 'slow') {
             let baseDmg = 4 + (building.level - 1) * 2; 
+            let finalDmg = Math.floor(baseDmg * building.buffMultiplier);
+            let bonusDmg = finalDmg - baseDmg;
+            let buffString = building.isBuffed ? ` <span style="color:#ff4141; font-weight:bold;">(+${bonusDmg})</span>` : '';
+
             let range = 160 + (building.level - 1) * 10 + globalBuff.rangeBonus;
             let spd = (1000 / (600 - (building.level - 1) * 25)).toFixed(1);
-            statusHtml = `<div>감속피해: ${Math.floor(baseDmg * globalBuff.damageMultiplier)}</div><div>사거리: ${range}px</div><div style="grid-column:span 2; color:#3b82f6;">공격 속도: ${spd}회/초</div>`;
+            statusHtml = `<div>감속피해: ${finalDmg}${buffString}</div><div>사거리: ${range}px</div><div style="grid-column:span 2; color:#3b82f6;">공격 속도: ${spd}회/초</div>`;
         } else if (building.type === 'turret') {
             if (building.subType === 'none') {
                 let baseDmg = 14 + (building.level - 1) * 8; 
+                let finalDmg = Math.floor(baseDmg * building.buffMultiplier);
+                let bonusDmg = finalDmg - baseDmg;
+                let buffString = building.isBuffed ? ` <span style="color:#ff4141; font-weight:bold;">(+${bonusDmg})</span>` : '';
+
                 let range = 240 + (building.level - 1) * 12 + globalBuff.rangeBonus;
                 let spd = (1000 / (600 - (building.level - 1) * 30)).toFixed(1);
-                statusHtml = `<div>공격력: ${Math.floor(baseDmg * globalBuff.damageMultiplier)}</div><div>사거리: ${range}px</div><div style="grid-column:span 2; color:#f59e0b;">공격 속도: ${spd}회/초</div>`;
+                statusHtml = `<div>공격력: ${finalDmg}${buffString}</div><div>사거리: ${range}px</div><div style="grid-column:span 2; color:#f59e0b;">공격 속도: ${spd}회/초</div>`;
                 if (building.level >= 5) { upBtn.style.display = "none"; evoBox.style.display = "grid"; setupEvoEvents(building); }
             } else {
                 let rangeBonus = (building.level - 5) * 12; let speedBonus = (building.level - 5) * 35;
                 if (building.subType === 'multi') {
+                    let baseDmg = 28 + (building.level - 5) * 10;
+                    let finalDmg = Math.floor(baseDmg * building.buffMultiplier);
+                    let bonusDmg = finalDmg - baseDmg;
+                    let buffString = building.isBuffed ? ` <span style="color:#ff4141; font-weight:bold;">(+${bonusDmg})</span>` : '';
+
                     let spd = (1000 / (500 - speedBonus)).toFixed(1);
-                    statusHtml = `<div>공격력: ${Math.floor((28 + (building.level-5)*10)*globalBuff.damageMultiplier)}</div><div>사거리: ${220 + rangeBonus}px</div><div style="grid-column:span 2;">공격 속도: ${spd}회/초 (3타겟)</div>`;
+                    statusHtml = `<div>공격력: ${finalDmg}${buffString}</div><div>사거리: ${220 + rangeBonus}px</div><div style="grid-column:span 2;">공격 속도: ${spd}회/초 (3타겟)</div>`;
                 } else if (building.subType === 'fire') {
+                    let baseDmg = 90 + (building.level - 5) * 30;
+                    let finalDmg = Math.floor(baseDmg * building.buffMultiplier);
+                    let bonusDmg = finalDmg - baseDmg;
+                    let buffString = building.isBuffed ? ` <span style="color:#ff4141; font-weight:bold;">(+${bonusDmg})</span>` : '';
+
                     let spd = (1000 / (800 - speedBonus)).toFixed(1);
-                    statusHtml = `<div>폭발피해: ${Math.floor((90 + (building.level-5)*30)*globalBuff.damageMultiplier)}</div><div>사거리: ${150 + rangeBonus}px</div><div style="grid-column:span 2;">공격 속도: ${spd}회/초 (범위폭발)</div>`;
+                    statusHtml = `<div>폭발피해: ${finalDmg}${buffString}</div><div>사거리: ${150 + rangeBonus}px</div><div style="grid-column:span 2;">공격 속도: ${spd}회/초 (범위폭발)</div>`;
                 } else if (building.subType === 'lightning') {
-                    let spd = (1000 / (350 - (building.level-5)*15)).toFixed(1);
-                    statusHtml = `<div>체인피해: ${Math.floor((6 + (building.level-5)*2)*globalBuff.damageMultiplier)}</div><div>사거리: ${280 + rangeBonus}px</div><div style="grid-column:span 2;">공격 속도: ${spd}회/초 (3연쇄)</div>`;
+                    let baseDmg = 6 + (building.level - 5) * 2;
+                    let finalDmg = Math.floor(baseDmg * building.buffMultiplier);
+                    let bonusDmg = finalDmg - baseDmg;
+                    let buffString = building.isBuffed ? ` <span style="color:#ff4141; font-weight:bold;">(+${bonusDmg})</span>` : '';
+
+                    let spd = (1000 / (350 - (building.level - 5) * 15)).toFixed(1);
+                    statusHtml = `<div>체인피해: ${finalDmg}${buffString}</div><div>사거리: ${280 + rangeBonus}px</div><div style="grid-column:span 2;">공격 속도: ${spd}회/초 (3연쇄)</div>`;
                 }
             }
         }
@@ -317,19 +375,19 @@
             if (gameState.gold >= costGold) {
                 gameState.gold -= costGold; building.level++;
                 if (building.type === 'generator' && building.level >= 3) gameState.electricity += 1;
-                upgradeModal.style.display = 'none'; recalculateBuffs(); updateUI();
+                recalculateBuffs(); showUpgradeModal(building); updateUI();
             }
         };
     }
-    document.getElementById('m-close').onclick = () => upgradeModal.style.display = 'none';
+    document.getElementById('m-close').onclick = () => { upgradeModal.style.display = 'none'; selectedObject = null; };
 
     function setupEvoEvents(building) {
         ['multi', 'fire', 'lightning'].forEach(type => {
             document.getElementById(`evo-${type}`).onclick = () => {
                 if (gameState.gold >= 250) {
                     gameState.gold -= 250; building.subType = type; building.level = 5;
-                    upgradeModal.style.display = 'none'; createParticle(canvas.width/2, gridStartY, '#ffd700', 25);
-                    recalculateBuffs(); updateUI();
+                    createParticle(canvas.width/2, gridStartY, '#ffd700', 25);
+                    recalculateBuffs(); showUpgradeModal(building); updateUI();
                 }
             };
         });
@@ -381,17 +439,6 @@
         gameState.time++;
         if (gameState.startDelay > 0) { gameState.startDelay--; if (gameState.startDelay <= 0) gameState.waveActive = true; }
 
-        buildings.forEach(b => {
-            if (b.type === 'generator') {
-                let addedGold = b.level * 4; gameState.gold += addedGold;
-                let bX = b.col * cellWidth + cellWidth/2; let bY = gridStartY + b.row * cellHeight + cellHeight/2;
-                if (b.level >= 3) {
-                    let addedElec = (b.level - 2); gameState.electricity += addedElec;
-                    createPopupText(bX, bY - 10, `+💰${addedGold} +⚡${addedElec}`, '#00ffcc', 10);
-                } else { createPopupText(bX, bY - 10, `+💰${addedGold}`, '#ffd700', 10); }
-            }
-        });
-
         if (gate.hp < gate.maxHp) gate.hp = Math.min(gate.maxHp, gate.hp + gate.regen);
         if (gameState.waveActive && gameState.waveZombiesLeft <= 0 && zombies.length === 0) startNextWave();
         let now = Date.now();
@@ -404,6 +451,33 @@
         let now = Date.now();
 
         buildings.forEach(b => {
+            if (b.type === 'generator') {
+                let requiredDelay = Math.max(400, 2000 - (b.level - 1) * 200);
+                if (now - b.lastGenTime >= requiredDelay) {
+                    let addedGold = b.level * 4; gameState.gold += addedGold;
+                    let bX = b.col * cellWidth + cellWidth/2; let bY = gridStartY + b.row * cellHeight + cellHeight/2;
+                    
+                    if (b.level >= 3) {
+                        let addedElec = (b.level - 2); gameState.electricity += addedElec;
+                        createPopupText(bX, bY - 10, `+💰${addedGold} +⚡${addedElec}`, '#00ffcc', 10);
+                    } else { 
+                        createPopupText(bX, bY - 10, `+💰${addedGold}`, '#ffd700', 10); 
+                    }
+                    b.lastGenTime = now;
+                    updateUI();
+                }
+            }
+        });
+    }, 50);
+
+    // 공격 및 사격 제어 루프
+    setInterval(() => {
+        if (gameState.gameOver) return;
+        let now = Date.now();
+
+        buildings.forEach(b => {
+            if (b.type === 'generator' || b.type === 'amp') return;
+
             let tX = b.col * cellWidth + cellWidth/2; let tY = gridStartY + b.row * cellHeight + cellHeight/2;
             let range = 240; let cooldown = 600;
 
@@ -417,14 +491,14 @@
                     else if (b.subType === 'lightning') { range = 280 + lvlBonus * 12; cooldown = Math.max(100, 350 - lvlBonus * 15); }
                 }
             }
-            if (b.type !== 'generator' && b.type !== 'amp') range += globalBuff.rangeBonus;
+            range += globalBuff.rangeBonus;
             if (now - b.lastShot < cooldown) return;
 
             if (b.subType === 'lightning') {
                 let primary = null;
                 zombies.forEach(z => { if (Math.hypot(z.x - tX, z.y - tY) < range && z.y < gate.y + gate.height + 10) { if (!primary || z.y > primary.y) primary = z; } });
                 if (primary) {
-                    let baseDmg = (6 + (b.level - 5) * 2) * globalBuff.damageMultiplier;
+                    let baseDmg = (6 + (b.level - 5) * 2) * b.buffMultiplier;
                     let chainedTargets = [primary]; chainLines.push({ x1: tX, y1: tY, x2: primary.x, y2: primary.y, alpha: 1.0 });
                     let currentSource = primary;
                     for (let step = 1; step < 3; step++) {
@@ -453,7 +527,7 @@
                 let count = 0;
                 for (let z of zombies) {
                     if (z.y < gate.y + gate.height + 10 && Math.hypot(z.x - tX, z.y - tY) < range) {
-                        let dmg = (28 + (b.level-5)*10) * globalBuff.damageMultiplier;
+                        let dmg = (28 + (b.level-5)*10) * b.buffMultiplier;
                         bullets.push({ x: tX, y: tY, target: z, speed: 11, damage: dmg, type: b.subType });
                         count++; if (count >= 3) break;
                     }
@@ -467,13 +541,16 @@
                     if (b.type === 'slow') dmg = 4 + (b.level - 1) * 2;
                     else if (b.type === 'turret' && b.subType === 'none') dmg = 14 + (b.level - 1) * 8;
                     else if (b.subType === 'fire') dmg = 90 + (b.level - 5) * 30;
-                    bullets.push({ x: tX, y: tY, target, speed: b.type === 'slow' ? 6 : 9, damage: dmg * globalBuff.damageMultiplier, type: b.subType === 'none' ? b.type : b.subType });
+                    bullets.push({ x: tX, y: tY, target, speed: b.type === 'slow' ? 6 : 9, damage: dmg * b.buffMultiplier, type: b.subType === 'none' ? b.type : b.subType });
                     b.lastShot = now; playSoundFX('shoot');
                 }
             }
         });
     }, 30);
 
+    // ==========================================
+    // 렌더링 루프 (비주얼 가시성 링 필터 보정)
+    // ==========================================
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#161616'; ctx.fillRect(0, gridStartY, canvas.width, gridHeight);
@@ -485,7 +562,7 @@
 
         if (gameImages.gate.complete && gameImages.gate.width > 0) { ctx.drawImage(gameImages.gate, gate.x, gate.y, gate.width, gate.height); } 
         else { ctx.fillStyle = '#444'; ctx.fillRect(gate.x, gate.y, gate.width, gate.height); }
-        ctx.strokeStyle = selectedObject && selectedObject.type === 'gate' ? '#00ffff' : '#b45309'; ctx.lineWidth = 4; ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
+        ctx.strokeStyle = selectedObject && selectedObject.type === 'gate' ? '#ff4141' : '#b45309'; ctx.lineWidth = 4; ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
 
         let hpPercent = gate.hp / gate.maxHp;
         ctx.fillStyle = '#ff4d4d'; ctx.fillRect(gate.x, gate.y - 12, gate.width * hpPercent, 5);
@@ -506,6 +583,26 @@
             else if (b.type === 'amp') img = gameImages.amp;
             else if (b.type === 'turret') img = gameImages.turret;
 
+            // [패치 핵심 코드] 연한 Red 계열의 은은한 오라 이펙트 적용
+            if (b.isBuffed) {
+                ctx.save();
+                // 투명도가 진하지 않고 부드러운 네온 레드 발광 효과 구현
+                ctx.strokeStyle = `rgba(255, 65, 65, ${0.45 + Math.sin(Date.now() / 140) * 0.2})`;
+                ctx.lineWidth = 3.5;
+                ctx.shadowColor = '#ff4141';
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(bX, bY, size + 5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 클릭 선택 표시기
+            if (selectedObject && selectedObject.row === b.row && selectedObject.col === b.col) {
+                ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2;
+                ctx.strokeRect(bX - size - 4, bY - size - 4, size * 2 + 8, size * 2 + 8);
+            }
+
             if (img && img.complete && img.width > 0) {
                 ctx.drawImage(img, bX - size, bY - size, size * 2, size * 2);
                 ctx.fillStyle = '#fff'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
@@ -515,7 +612,7 @@
             } else {
                 if (b.type === 'generator') { ctx.fillStyle = b.level >= 3 ? '#00ffcc' : '#10b981'; ctx.beginPath(); ctx.arc(bX, bY, size, 0, Math.PI*2); ctx.fill(); } 
                 else if (b.type === 'slow') { ctx.fillStyle = '#3b82f6'; ctx.beginPath(); ctx.moveTo(bX, bY - size); ctx.lineTo(bX + size, bY + size); ctx.lineTo(bX - size, bY + size); ctx.closePath(); ctx.fill(); } 
-                else if (b.type === 'amp') { ctx.fillStyle = '#ec4899'; ctx.beginPath(); ctx.arc(bX, bY, size, 0, Math.PI*2); ctx.fill(); } 
+                else if (b.type === 'amp') { ctx.fillStyle = '#ff4141'; ctx.beginPath(); ctx.arc(bX, bY, size, 0, Math.PI*2); ctx.fill(); } 
                 else if (b.type === 'turret') {
                     ctx.fillStyle = b.subType === 'none' ? '#f59e0b' : b.subType === 'multi' ? '#ffd700' : b.subType === 'fire' ? '#ef4444' : '#a855f7';
                     ctx.fillRect(bX - size, bY - size, size * 2, size * 2);
