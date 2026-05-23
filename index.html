@@ -110,11 +110,20 @@
 </div>
 
 <script>
+    // [교정]: 몬스터 종류별 독립 이미지 채널 세분화 확보
     const gameImages = {
-        zombie_normal: new Image(), generator: new Image(), turret: new Image(), slow: new Image(), amp: new Image(), gate: new Image(),
+        zombie_normal: new Image(), 
+        zombie_runner: new Image(), 
+        zombie_boss: new Image(),
+        generator: new Image(), turret: new Image(), slow: new Image(), amp: new Image(), gate: new Image(),
         bg1: new Image(), bg2: new Image(), bg3: new Image(), bg4: new Image()
     };
-    gameImages.zombie_normal.src = "zombie.png";
+    
+    // 세분화된 적 이미지 경로 정의
+    gameImages.zombie_normal.src = "zombie_normal.png";
+    gameImages.zombie_runner.src = "zombie_runner.png";
+    gameImages.zombie_boss.src = "zombie_boss.png";
+    
     gameImages.generator.src = "generator.png";
     gameImages.turret.src = "turret_base.png";
     gameImages.slow.src = "turret_slow.png";
@@ -126,7 +135,12 @@
     gameImages.bg3.src = "background_wall3.png";
     gameImages.bg4.src = "background_wall4.png";
 
-    const ZOMBIE_SPRITE_CONF = { sheetWidth: 320, sheetHeight: 30, totalFrames: 7 };
+    // [교정]: 각 유닛별 스프라이트 규격을 가변 제어하기 위해 몬스터 메타 구조로 전환
+    const MONSTER_SPEC = {
+        normal: { sheetWidth: 320, sheetHeight: 30, totalFrames: 7 },
+        runner: { sheetWidth: 320, sheetHeight: 30, totalFrames: 7 }, // 필요시 파일 규격에 맞춰 조정 가능
+        boss: { sheetWidth: 320, sheetHeight: 40, totalFrames: 4 }
+    };
 
     let audioCtx = null; let bgmInterval = null;
     function initAudio() {
@@ -192,7 +206,6 @@
     const GRID_ROWS = 5; const GRID_COLS = 7;
     let cellWidth = 0; let cellHeight = 0; let gridStartY = 0; let gridHeight = 0;
     
-    // 성문 구조체 객체에 레벨별 기본 골드 지급 연동을 위한 속성 보강 (level * 2의 수치 배정)
     let gate = { name: "SUWON", x: 0, y: 0, width: 155, height: 28, hp: 2000, maxHp: 2000, level: 1, regen: 6, upgradeCost: 150 };
 
     function updateGridDimensions() {
@@ -492,6 +505,7 @@
     }
     function createPopupText(x, y, text, color, size) { textPopups.push({ x, y, text: text, color: color, alpha: 1, size: size, ySpeed: -0.8 }); }
 
+    // [교정]: 몬스터 스폰 시 각 타입에 매핑되는 개별 사양과 이미지 참조 상태를 정밀 삽입
     function spawnZombieHorde() {
         if (gameState.gameOver || !gameState.waveActive || gameState.waveTotalSpawned >= gameState.waveMaxSpawn || gameState.choiceActive) return;
         if (gameState.wave > 40) { gameState.gameOver = true; endGame(true); return; }
@@ -507,11 +521,26 @@
             let spawnY = -20 - (Math.random() * 50);
             
             if (gameState.wave % 5 === 0 && gameState.waveTotalSpawned === 1) {
-                zombies.push({ x: canvas.width/2, y: -40, hp: hpBase*6, maxHp: hpBase*6, speed: 0.20 * speedMultiplier, type: 'boss', radius: 22, state: 'attack', lastAttack: 0, slowTimer: 0, animFrame: 0, animTimer: 0, maxFrames: 4, isDead: false });
+                // 보스 몬스터 정보 구성
+                zombies.push({ 
+                    x: canvas.width/2, y: -40, hp: hpBase*6, maxHp: hpBase*6, speed: 0.20 * speedMultiplier, 
+                    type: 'boss', radius: 22, state: 'attack', lastAttack: 0, slowTimer: 0, 
+                    animFrame: 0, animTimer: 0, maxFrames: MONSTER_SPEC.boss.totalFrames, isDead: false 
+                });
             } else if (Math.random() > 0.7) {
-                zombies.push({ x: spawnX, y: spawnY, hp: hpBase*0.5, maxHp: hpBase*0.5, speed: 1.1 * speedMultiplier, type: 'runner', radius: 9, state: 'attack', lastAttack: 0, slowTimer: 0, animFrame: 0, animTimer: 0, maxFrames: 4, isDead: false });
+                // 돌격형 몬스터 정보 구성
+                zombies.push({ 
+                    x: spawnX, y: spawnY, hp: hpBase*0.5, maxHp: hpBase*0.5, speed: 1.1 * speedMultiplier, 
+                    type: 'runner', radius: 9, state: 'attack', lastAttack: 0, slowTimer: 0, 
+                    animFrame: 0, animTimer: 0, maxFrames: MONSTER_SPEC.runner.totalFrames, isDead: false 
+                });
             } else {
-                zombies.push({ x: spawnX, y: spawnY, hp: hpBase, maxHp: hpBase, speed: 0.52 * speedMultiplier, type: 'normal', radius: 12, state: 'attack', lastAttack: 0, slowTimer: 0, animFrame: 0, animTimer: 0, maxFrames: ZOMBIE_SPRITE_CONF.totalFrames, isDead: false });
+                // 일반 몬스터 정보 구성
+                zombies.push({ 
+                    x: spawnX, y: spawnY, hp: hpBase, maxHp: hpBase, speed: 0.52 * speedMultiplier, 
+                    type: 'normal', radius: 12, state: 'attack', lastAttack: 0, slowTimer: 0, 
+                    animFrame: 0, animTimer: 0, maxFrames: MONSTER_SPEC.normal.totalFrames, isDead: false 
+                });
             }
         }
     }
@@ -553,16 +582,13 @@
         updateUI();
     }, 1000);
 
-    // 오직 성문(Gate)과 군량고(Generator)에서만 자원을 정산하는 핵심 내부 루프
     setInterval(() => {
         if (gameState.gameOver || gameState.choiceActive) return;
         let now = Date.now();
 
-        // [교정 완료]: 성문(Gate)만 레벨 비례 골드를 단독 생산 (50ms마다 누적하므로 초당 gate.level * 2 축적)
         gameState.gold += (gate.level * 0.1); 
 
         buildings.forEach(b => {
-            // 다른 일반 포루(turret, slow, amp)에서는 골드가 생산되지 않도록 완벽 차단됨.
             if (b.type === 'generator') {
                 let requiredDelay = Math.max(400, 2000 - (b.level - 1) * 200);
                 if (now - b.lastGenTime >= requiredDelay) {
@@ -775,14 +801,29 @@
             
             z.animTimer++; if (z.animTimer >= 9) { z.animFrame = (z.animFrame + 1) % z.maxFrames; z.animTimer = 0; }
 
-            if (z.type === 'normal' && gameImages.zombie_normal.complete && gameImages.zombie_normal.width > 0) {
-                let cellW = ZOMBIE_SPRITE_CONF.sheetWidth / ZOMBIE_SPRITE_CONF.totalFrames; let cellH = ZOMBIE_SPRITE_CONF.sheetHeight;
-                let sx = z.animFrame * cellW; let sy = 0;
-                ctx.save(); ctx.translate(z.x, z.y);
-                let renderH = z.radius * 3.5; let renderW = renderH * (cellW / cellH);
-                ctx.drawImage(gameImages.zombie_normal, sx, sy, cellW, cellH, -renderW / 2, -renderH / 2, renderW, renderH);
+            // [교정]: 타입별 이미지 자원 분기 및 가변 메타데이터 기반 스프라이트 시트 드로우 파트 리팩토링
+            let targetImg = null;
+            let spec = MONSTER_SPEC[z.type];
+            
+            if (z.type === 'boss') targetImg = gameImages.zombie_boss;
+            else if (z.type === 'runner') targetImg = gameImages.zombie_runner;
+            else targetImg = gameImages.zombie_normal;
+
+            if (targetImg && targetImg.complete && targetImg.width > 0 && spec) {
+                let cellW = spec.sheetWidth / spec.totalFrames; 
+                let cellH = spec.sheetHeight;
+                let sx = z.animFrame * cellW; 
+                let sy = 0;
+                
+                ctx.save(); 
+                ctx.translate(z.x, z.y);
+                // 몬스터 크기(radius)에 따라 비례하여 렌더링 배율 처리
+                let renderH = z.radius * 3.5; 
+                let renderW = renderH * (cellW / cellH);
+                ctx.drawImage(targetImg, sx, sy, cellW, cellH, -renderW / 2, -renderH / 2, renderW, renderH);
                 ctx.restore();
             } else {
+                // 이미지 로드 실패 혹은 로딩 중일 때 백업용 기본 원형 셰이더 유지
                 ctx.fillStyle = z.type === 'boss' ? '#a855f7' : (z.type === 'runner' ? '#ea580c' : '#166534');
                 ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, Math.PI*2); ctx.fill();
             }
