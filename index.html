@@ -100,7 +100,8 @@
 
 <script>
     const gameImages = {
-        zombie_normal: new Image(), generator: new Image(), turret: new Image(), slow: new Image(), amp: new Image(), gate: new Image()
+        zombie_normal: new Image(), generator: new Image(), turret: new Image(), slow: new Image(), amp: new Image(), gate: new Image(),
+        bg1: new Image(), bg2: new Image(), bg3: new Image(), bg4: new Image()
     };
     gameImages.zombie_normal.src = "zombie.png";
     gameImages.generator.src = "generator.png";
@@ -108,6 +109,12 @@
     gameImages.slow.src = "turret_slow.png";
     gameImages.amp.src = "turret_amp.png";
     gameImages.gate.src = "castle_gate.png";
+    
+    // 💡 [배경 이미지 소스 지정]
+    gameImages.bg1.src = "background_wall1.png";
+    gameImages.bg2.src = "background_wall2.png";
+    gameImages.bg3.src = "background_wall3.png";
+    gameImages.bg4.src = "background_wall4.png";
 
     const ZOMBIE_SPRITE_CONF = { sheetWidth: 320, sheetHeight: 30, totalFrames: 7 };
 
@@ -172,11 +179,9 @@
         waveActive: false, startDelay: 5, choiceActive: false
     };
     
-    // 💡 [7x5 후방 압축 구조 유지]
     const GRID_ROWS = 5; const GRID_COLS = 7;
     let cellWidth = 0; let cellHeight = 0; let gridStartY = 0; let gridHeight = 0;
     
-    // 💡 [신규 아이디어 반영]: 수원 화성 콘셉트의 기본 스탯 주입
     let gate = { name: "SUWON", x: 0, y: 0, width: 155, height: 28, hp: 2000, maxHp: 2000, level: 1, regen: 6, upgradeCost: 150 };
 
     function updateGridDimensions() {
@@ -185,7 +190,6 @@
         cellWidth = canvas.width / GRID_COLS; 
         cellHeight = gridHeight / GRID_ROWS;
         
-        // 후방에 밀착 고정
         gate.x = canvas.width / 2 - gate.width / 2; 
         gate.y = gridStartY + gridHeight + 6;
     }
@@ -195,7 +199,7 @@
     let selectedObject = null;
     let buildings = []; let zombies = []; let bullets = []; let particles = []; let textPopups = []; let chainLines = [];
     let currentBuildMode = 'none'; 
-    let globalBuff = { rangeBonus: 0, maxAmpLevel: 0, dmgMultiplier: 1.0 }; // 로그라이크 전체 공격력 버프 추가
+    let globalBuff = { rangeBonus: 0, maxAmpLevel: 0, dmgMultiplier: 1.0 };
 
     const goldVal = document.getElementById('gold-val'); const elecVal = document.getElementById('elec-val');
     const waveVal = document.getElementById('wave-val'); const timerVal = document.getElementById('timer-val');
@@ -390,7 +394,6 @@
         });
     }
 
-    // 💡 [신규 아이디어 완벽 융합]: 수원 화성 맞춤형 로그라이크 전술 보상 체계 구축
     function triggerRogueChoice() {
         gameState.choiceActive = true;
         upgradeModal.style.display = 'none';
@@ -423,7 +426,6 @@
     }
 
     function applyRogueEffect(id) {
-        // 💡 [후방 좌표 연동]: 후방 성문(gate.y) 기준으로 이펙트 정밀 출력되도록 동기화 수정
         if(id === 'gate_heal') {
             gate.hp = Math.min(gate.maxHp, gate.hp + gate.maxHp * 0.5);
             createPopupText(gate.x + gate.width/2, gate.y - 10, "+영소수리 50%", "#10b981", 14);
@@ -609,7 +611,23 @@
 
     function gameLoop() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#161616'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 💡 [배경 이미지 1~4번 순환 선택 알고리즘 추가]
+        let currentBG = gameImages.bg1;
+        if (gameState.wave > 30) currentBG = gameImages.bg4;
+        else if (gameState.wave > 20) currentBG = gameImages.bg3;
+        else if (gameState.wave > 10) currentBG = gameImages.bg2;
+
+        // 💡 [배경 이미지 렌더링 - 투명도 0.8 처리 적용]
+        if (currentBG.complete && currentBG.width > 0) {
+            ctx.save();
+            ctx.globalAlpha = 0.8; // 요청하신 투명도 고정 세팅
+            ctx.drawImage(currentBG, 0, 0, canvas.width, canvas.height);
+            ctx.restore(); // 투명도가 다른 스프라이트(타워, 적)에 영향 주지 않도록 즉시 복구
+        } else {
+            ctx.fillStyle = '#161616'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         // 7x5 격자선 드로잉
         ctx.fillStyle = 'rgba(25, 25, 25, 0.3)'; ctx.fillRect(0, gridStartY, canvas.width, gridHeight);
@@ -620,7 +638,7 @@
         // 수비 가이드 최종 한계선
         ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, gate.y); ctx.lineTo(canvas.width, gate.y); ctx.stroke();
 
-        // 🧱 [화성 성문 렌더링]: 최하단 뒤쪽에 정렬 배치
+        // 화성 성문 렌더링
         if (gameImages.gate.complete && gameImages.gate.width > 0) { ctx.drawImage(gameImages.gate, gate.x, gate.y, gate.width, gate.height); } 
         else { ctx.fillStyle = '#3a3a3a'; ctx.fillRect(gate.x, gate.y, gate.width, gate.height); }
         ctx.strokeStyle = selectedObject && selectedObject.type === 'gate' ? '#ff4141' : '#64748b'; ctx.lineWidth = 4; ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
@@ -628,8 +646,6 @@
         let hpPercent = Math.max(0, gate.hp / gate.maxHp);
         ctx.fillStyle = '#ef4444'; ctx.fillRect(gate.x, gate.y - 12, gate.width * hpPercent, 6);
         ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
-        
-        // 💡 [수원 화성 텍스트 마킹 적용 완료]
         ctx.fillText(`🧱 [${gate.name}] 화성 장벽 Lv.${gate.level} (${Math.floor(gate.hp)}/${gate.maxHp})`, gate.x + gate.width/2, gate.y - 2);
 
         if (gameState.startDelay > 0 && gameState.wave === 1) {
@@ -697,14 +713,13 @@
             l.alpha -= 0.16; if (l.alpha <= 0) chainLines.splice(i, 1);
         }
 
-        // 🧟 좀비AI 이동 알고리즘 & 성문 파괴 조건
+        // 좀비AI 이동 알고리즘 & 성문 파괴 조건
         for (let i = zombies.length - 1; i >= 0; i--) {
             let z = zombies[i];
             if(z.isDead) { zombies.splice(i, 1); gameState.waveZombiesLeft--; continue; }
 
             let speed = z.speed; if (z.slowTimer > 0) { z.slowTimer--; speed *= 0.45; }
             
-            // 후방 성문 타겟 추적 고정
             let targetX = Math.max(gate.x, Math.min(z.x, gate.x + gate.width));
             let targetY = gate.y;
             
