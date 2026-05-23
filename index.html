@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>수원 화성 방어전 - 7x5 로그라이크 고도화 에디션</title>
+    <title>수원 화성 방어전 - 이미지 스케일 및 실시간 모달 UI 교정 에디션</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
         body { background-color: #121212; color: #ffffff; font-family: 'Malgun Gothic', sans-serif; overflow: hidden; touch-action: manipulation; }
@@ -18,7 +18,6 @@
         #canvas-container { flex: 1; position: relative; background: #141414; }
         canvas { width: 100%; height: 100%; display: block; z-index: 2; position: relative; }
         
-        /* 배경 레이어 가시화 */
         .bg-underlay { position: absolute; top:0; left:0; width:100%; height:100%; opacity: 0.8; pointer-events: none; z-index: 1; background-size: cover; background-position: center; }
 
         /* 하단 UI */
@@ -36,7 +35,6 @@
         .modal-btn { width: 100%; padding: 10px; background: #ff4141; color: #000; border: none; border-radius: 5px; font-weight: bold; font-size: 13px; cursor: pointer; margin-top: 5px; }
         .modal-btn:disabled { background: #555; color: #aaa; cursor: not-allowed; }
         
-        /* 기술 개발 연구 버튼 스타일 */
         .tech-btn { background: #0088cc !important; color: white !important; margin-top: 6px; }
         .tech-btn:disabled { background: #445560 !important; color: #888 !important; }
 
@@ -110,7 +108,6 @@
 </div>
 
 <script>
-    // 이미지 오프셋 채널 선언
     const gameImages = {
         zombie_normal: new Image(), 
         zombie_runner: new Image(), 
@@ -119,8 +116,7 @@
         bg1: new Image(), bg2: new Image(), bg3: new Image(), bg4: new Image()
     };
     
-    // 세분화된 적 이미지 경로 정의
-    gameImages.zombie_normal.src = "zombie.png"; // 원본 좀비 파일
+    gameImages.zombie_normal.src = "zombie.png"; 
     gameImages.zombie_runner.src = "zombie_runner.png";
     gameImages.zombie_boss.src = "zombie_boss.png";
     
@@ -135,11 +131,11 @@
     gameImages.bg3.src = "background_wall3.png";
     gameImages.bg4.src = "background_wall4.png";
 
-    // [교정]: 요청하신 고해상도 규격 스펙 적용 (sheetWidth, sheetHeight, totalFrames 완벽 수정)
+    // 몬스터 이미지 크기 맞춤 메타데이터 규격 정밀 설계
     const MONSTER_SPEC = {
         normal: { sheetWidth: 320, sheetHeight: 30, totalFrames: 7 },
-        runner: { sheetWidth: 1366, sheetHeight: 384, totalFrames: 5 }, // 5프레임 1366x384 교정
-        boss: { sheetWidth: 1363, sheetHeight: 384, totalFrames: 4 }     // 4프레임 1363x384 교정
+        runner: { sheetWidth: 1366, sheetHeight: 384, totalFrames: 5 }, 
+        boss: { sheetWidth: 1363, sheetHeight: 384, totalFrames: 4 }     
     };
 
     let audioCtx = null; let bgmInterval = null;
@@ -206,16 +202,20 @@
     const GRID_ROWS = 5; const GRID_COLS = 7;
     let cellWidth = 0; let cellHeight = 0; let gridStartY = 0; let gridHeight = 0;
     
-    let gate = { name: "SUWON", x: 0, y: 0, width: 155, height: 28, hp: 2000, maxHp: 2000, level: 1, regen: 6, upgradeCost: 150 };
+    // [교정]: 성문 크기 비율 제어를 위해 고정 수치 제거 및 초기화 분리
+    let gate = { name: "SUWON", x: 0, y: 0, width: 0, height: 0, hp: 2000, maxHp: 2000, level: 1, regen: 6, upgradeCost: 150 };
 
     function updateGridDimensions() {
-        gridStartY = canvas.height * 0.35; 
-        gridHeight = canvas.height * 0.50;
+        gridStartY = canvas.height * 0.32; 
+        gridHeight = canvas.height * 0.52;
         cellWidth = canvas.width / GRID_COLS; 
         cellHeight = gridHeight / GRID_ROWS;
         
-        gate.x = canvas.width / 2 - gate.width / 2; 
-        gate.y = gridStartY + gridHeight + 6;
+        // [교정]: 수원성이 화면을 웅장하게 덮도록 프레임 크기에 연동 (가로 전체 채움)
+        gate.width = canvas.width;
+        gate.height = canvas.height * 0.08; 
+        gate.x = 0; 
+        gate.y = gridStartY + gridHeight + 2;
     }
     function resizeCanvas() { canvas.width = container.clientWidth; canvas.height = container.clientHeight; updateGridDimensions(); }
     window.addEventListener('resize', resizeCanvas);
@@ -319,6 +319,28 @@
         }
     }
 
+    // [교정]: 모달창을 켠 상태에서 골드가 늘어나면 실시간으로 활성화/비활성화 갱신하는 브릿지 로직 구현
+    function refreshCurrentModal() {
+        if (upgradeModal.style.display !== 'block' || !selectedObject) return;
+        if (selectedObject.type === 'gate') {
+            const upBtn = document.getElementById('m-upgrade-btn');
+            upBtn.disabled = gameState.gold < gate.upgradeCost;
+            document.getElementById('m-tech-dmg-btn').disabled = gameState.electricity < 5;
+            document.getElementById('m-tech-hp-btn').disabled = gameState.electricity < 8;
+        } else {
+            const upBtn = document.getElementById('m-upgrade-btn');
+            if (selectedObject.level < 10) {
+                let isLocked = (selectedObject.type !== 'amp' && selectedObject.level >= 7 && globalBuff.maxAmpLevel < 3);
+                if (!isLocked) {
+                    let costGold = Math.floor(50 * Math.pow(1.5, selectedObject.level));
+                    if (selectedObject.type === 'amp') costGold = Math.floor(130 * Math.pow(1.7, selectedObject.level));
+                    if (selectedObject.subType !== 'none') costGold = Math.floor(140 * Math.pow(1.6, selectedObject.level - 4));
+                    upBtn.disabled = gameState.gold < costGold;
+                }
+            }
+        }
+    }
+
     function showGateUpgradeModal() {
         upgradeModal.style.display = 'block'; document.getElementById('m-evo-box').style.display = 'none';
         const upBtn = document.getElementById('m-upgrade-btn'); upBtn.style.display = 'block';
@@ -336,8 +358,8 @@
             if (gameState.gold >= gate.upgradeCost) {
                 gameState.gold -= gate.upgradeCost; gate.level++; gate.maxHp += 1000; gate.hp = gate.maxHp; gate.regen += 4;
                 gate.upgradeCost = Math.floor(gate.upgradeCost * 1.6);
-                createParticle(gate.x + gate.width/2, gate.y + gate.height/2, '#ffd700', 20);
-                hideAllModals(); selectedObject = null; updateUI();
+                createParticle(canvas.width/2, gate.y + gate.height/2, '#ffd700', 20);
+                showGateUpgradeModal(); updateUI();
             }
         };
 
@@ -354,7 +376,7 @@
         hpTechBtn.onclick = () => {
             if(gameState.electricity >= 8) {
                 gameState.electricity -= 8; gate.maxHp += 1500; gate.hp = gate.maxHp;
-                createPopupText(gate.x + gate.width/2, gate.y - 10, "⚡ 성벽 외곽 요새 철골 보강!", "#00ff00", 13);
+                createPopupText(canvas.width/2, gate.y - 10, "⚡ 성벽 외곽 요새 요충지 철골 보강!", "#00ff00", 13);
                 showGateUpgradeModal(); updateUI();
             }
         };
@@ -482,10 +504,10 @@
     function applyRogueEffect(id) {
         if(id === 'gate_heal') {
             gate.hp = Math.min(gate.maxHp, gate.hp + gate.maxHp * 0.5);
-            createPopupText(gate.x + gate.width/2, gate.y - 10, "+영소수리 50%", "#10b981", 14);
+            createPopupText(canvas.width/2, gate.y - 10, "+영소수리 50%", "#10b981", 14);
         } else if(id === 'gate_max') {
             gate.maxHp += 2000; gate.hp += 2000;
-            createPopupText(gate.x + gate.width/2, gate.y - 10, "옹성 외벽 증축 완료!", "#3b82f6", 14);
+            createPopupText(canvas.width/2, gate.y - 10, "옹성 외벽 증축 완료!", "#3b82f6", 14);
         } else if(id === 'gold_pack') {
             gameState.gold += 300;
             playSoundFX('coin');
@@ -520,24 +542,21 @@
             let spawnY = -20 - (Math.random() * 50);
             
             if (gameState.wave % 5 === 0 && gameState.waveTotalSpawned === 1) {
-                // 보스 몬스터 정보 구성 (규격은 MONSTER_SPEC 참조)
                 zombies.push({ 
-                    x: canvas.width/2, y: -40, hp: hpBase*6, maxHp: hpBase*6, speed: 0.20 * speedMultiplier, 
+                    x: canvas.width/2, y: -40, hp: hpBase*6, maxHp: hpBase*6, speed: 0.22 * speedMultiplier, 
                     type: 'boss', radius: 24, state: 'attack', lastAttack: 0, slowTimer: 0, 
                     animFrame: 0, animTimer: 0, maxFrames: MONSTER_SPEC.boss.totalFrames, isDead: false 
                 });
             } else if (Math.random() > 0.7) {
-                // 돌격형 몬스터 정보 구성 (규격은 MONSTER_SPEC 참조)
                 zombies.push({ 
                     x: spawnX, y: spawnY, hp: hpBase*0.5, maxHp: hpBase*0.5, speed: 1.1 * speedMultiplier, 
-                    type: 'runner', radius: 10, state: 'attack', lastAttack: 0, slowTimer: 0, 
+                    type: 'runner', radius: 11, state: 'attack', lastAttack: 0, slowTimer: 0, 
                     animFrame: 0, animTimer: 0, maxFrames: MONSTER_SPEC.runner.totalFrames, isDead: false 
                 });
             } else {
-                // 일반 몬스터 정보 구성
                 zombies.push({ 
-                    x: spawnX, y: spawnY, hp: hpBase, maxHp: hpBase, speed: 0.52 * speedMultiplier, 
-                    type: 'normal', radius: 12, state: 'attack', lastAttack: 0, slowTimer: 0, 
+                    x: spawnX, y: spawnY, hp: hpBase, maxHp: hpBase, speed: 0.55 * speedMultiplier, 
+                    type: 'normal', radius: 13, state: 'attack', lastAttack: 0, slowTimer: 0, 
                     animFrame: 0, animTimer: 0, maxFrames: MONSTER_SPEC.normal.totalFrames, isDead: false 
                 });
             }
@@ -581,6 +600,7 @@
         updateUI();
     }, 1000);
 
+    // 군비 수급 제어 루프
     setInterval(() => {
         if (gameState.gameOver || gameState.choiceActive) return;
         let now = Date.now();
@@ -605,9 +625,11 @@
                 }
             }
         });
+        
+        // [교정]: 골드 획득과 동시에 열려있는 업그레이드 창의 실시간 활성화 여부를 즉시 갱신
+        refreshCurrentModal();
     }, 50);
 
-    // 사격 연산 제어 루프
     setInterval(() => {
         if (gameState.gameOver || gameState.choiceActive) return;
         let now = Date.now();
@@ -713,16 +735,21 @@
         for (let i = 0; i <= GRID_COLS; i++) { ctx.beginPath(); ctx.moveTo(i * cellWidth, gridStartY); ctx.lineTo(i * cellWidth, gridStartY + gridHeight); ctx.stroke(); }
         for (let j = 0; j <= GRID_ROWS; j++) { ctx.beginPath(); ctx.moveTo(0, gridStartY + j * cellHeight); ctx.lineTo(canvas.width, gridStartY + j * cellHeight); ctx.stroke(); }
 
-        ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, gate.y); ctx.lineTo(canvas.width, gate.y); ctx.stroke();
+        ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 2.0; ctx.beginPath(); ctx.moveTo(0, gate.y); ctx.lineTo(canvas.width, gate.y); ctx.stroke();
 
-        if (gameImages.gate.complete && gameImages.gate.width > 0) { ctx.drawImage(gameImages.gate, gate.x, gate.y, gate.width, gate.height); } 
-        else { ctx.fillStyle = '#3a3a3a'; ctx.fillRect(gate.x, gate.y, gate.width, gate.height); }
-        ctx.strokeStyle = selectedObject && selectedObject.type === 'gate' ? '#ff4141' : '#64748b'; ctx.lineWidth = 4; ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
+        // [교정]: 가변 반응형 비율에 맞춰 수원성 장벽 이미지 꽉 차게 자동 확대 드로우
+        if (gameImages.gate.complete && gameImages.gate.width > 0) { 
+            ctx.drawImage(gameImages.gate, gate.x, gate.y, gate.width, gate.height); 
+        } else { 
+            ctx.fillStyle = '#3a3a3a'; ctx.fillRect(gate.x, gate.y, gate.width, gate.height); 
+        }
+        ctx.strokeStyle = selectedObject && selectedObject.type === 'gate' ? '#ff4141' : 'rgba(100,116,139,0.6)'; ctx.lineWidth = 3; ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
 
         let hpPercent = Math.max(0, gate.hp / gate.maxHp);
-        ctx.fillStyle = '#ef4444'; ctx.fillRect(gate.x, gate.y - 12, gate.width * hpPercent, 6);
-        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(`🧱 [${gate.name}] 화성 장벽 Lv.${gate.level} (${Math.floor(gate.hp)}/${gate.maxHp})`, gate.x + gate.width/2, gate.y - 2);
+        ctx.fillStyle = '#ef4444'; ctx.fillRect(10, gate.y - 14, canvas.width - 20, 6);
+        ctx.fillStyle = '#10b981'; ctx.fillRect(10, gate.y - 14, (canvas.width - 20) * hpPercent, 6);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(`🧱 [${gate.name}] 수원성 장벽 완화 수성고 Lv.${gate.level} (${Math.floor(gate.hp)}/${gate.maxHp})`, canvas.width/2, gate.y - 3);
 
         buildings.forEach(amp => {
             if (amp.type === 'amp') {
@@ -784,7 +811,7 @@
             let speed = z.speed; if (z.slowTimer > 0) { z.slowTimer--; speed *= 0.45; }
             
             let targetX = Math.max(gate.x, Math.min(z.x, gate.x + gate.width)); let targetY = gate.y;
-            let isCollidingWithGate = (z.x >= gate.x - z.radius && z.x <= gate.x + gate.width + z.radius && z.y >= gate.y - 6 && z.y <= gate.y + gate.height + z.radius);
+            let isCollidingWithGate = (z.x >= gate.x - z.radius && z.x <= gate.x + gate.width + z.radius && z.y >= gate.y - 6 && z.y <= gate.y + 6);
             
             if (!isCollidingWithGate) { 
                 let angle = Math.atan2(targetY - z.y, targetX - z.x); z.x += Math.cos(angle) * speed; z.y += Math.sin(angle) * speed; 
@@ -800,16 +827,16 @@
             
             z.animTimer++; if (z.animTimer >= 9) { z.animFrame = (z.animFrame + 1) % z.maxFrames; z.animTimer = 0; }
 
-            // [교정]: 고해상도 가변 스프라이트 시트 드로우 파트 정밀 구현
             let targetImg = null;
             let spec = MONSTER_SPEC[z.type];
             
             if (z.type === 'boss') targetImg = gameImages.zombie_boss;
             else if (z.type === 'runner') targetImg = gameImages.zombie_runner;
-            else targetImg = gameImages.zombie_normal;
+            else targetImg = gameImages.zombie_normal; // [교정] 정상 바인딩 완료
 
+            // [교정]: 이미지 원본 종횡비를 수식적으로 자동 연산해 크기가 제각각인 시트도 동일한 충돌체 스케일로 정규화
             if (targetImg && targetImg.complete && targetImg.width > 0 && spec) {
-                let cellW = spec.sheetWidth / spec.totalFrames; // 시트의 가로폭을 프레임 수로 파싱
+                let cellW = spec.sheetWidth / spec.totalFrames; 
                 let cellH = spec.sheetHeight;
                 let sx = z.animFrame * cellW; 
                 let sy = 0;
@@ -817,9 +844,8 @@
                 ctx.save(); 
                 ctx.translate(z.x, z.y);
                 
-                // 몬스터의 인게임 충돌 크기(radius)에 비례하여 드로우 스케일 자동 제어
-                let renderH = z.radius * 3.5; 
-                let renderW = renderH * (cellW / cellH); // 종횡비 보존
+                let renderH = z.radius * 3.2; 
+                let renderW = renderH * (cellW / cellH); 
                 
                 ctx.drawImage(targetImg, sx, sy, cellW, cellH, -renderW / 2, -renderH / 2, renderW, renderH);
                 ctx.restore();
